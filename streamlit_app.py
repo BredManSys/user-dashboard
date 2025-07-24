@@ -5,7 +5,7 @@ import plotly.express as px
 st.set_page_config(page_title="User Login Dashboard", layout="wide")
 st.title("📊 Дашборд логинов пользователей")
 
-# Путь к Excel-файлу
+# Загрузка данных
 file_path = "data/user_connections.xlsx"
 
 try:
@@ -14,31 +14,29 @@ except Exception as e:
     st.error(f"Ошибка чтения файла: {e}")
     st.stop()
 
-# Проверка наличия нужных колонок
+# Проверка структуры
 required_cols = ["Дата", "Время", "Пользователь", "Айпи"]
 if not all(col in df.columns for col in required_cols):
     st.error("Файл должен содержать колонки: Дата, Время, Пользователь, Айпи")
     st.stop()
 
-# Объединяем дату и время в одну колонку datetime
+# Объединение даты и времени
 df["Дата"] = pd.to_datetime(df["Дата"].astype(str) + " " + df["Время"].astype(str), format="%Y-%m-%d %H:%M")
-
-# Переименовываем 'Айпи' → 'IP' для удобства
 df.rename(columns={"Айпи": "IP"}, inplace=True)
 
-# Фильтры
+# Фильтры (общие)
 users = df["Пользователь"].unique()
 ips = df["IP"].unique()
 
-col1, col2 = st.columns(2)
-with col1:
-    selected_users = st.multiselect("Пользователь", users, default=list(users))
-with col2:
-    selected_ips = st.multiselect("IP-адрес", ips, default=list(ips))
+st.sidebar.header("🔧 Фильтры")
+selected_users = st.sidebar.multiselect("Пользователь", users, default=list(users))
+selected_ips = st.sidebar.multiselect("IP-адрес", ips, default=list(ips))
 
 date_min = df["Дата"].min().date()
 date_max = df["Дата"].max().date()
-date_range = st.date_input("Выберите диапазон дат", [date_min, date_max])
+date_range = st.sidebar.date_input("Диапазон дат", [date_min, date_max])
+
+search_text = st.sidebar.text_input("Поиск (логин или IP)")
 
 # Фильтрация
 filtered = df[
@@ -48,24 +46,77 @@ filtered = df[
     (df["IP"].isin(selected_ips))
 ]
 
-# 📈 График подключений по дням
-visits = filtered.groupby(filtered["Дата"].dt.date).size().reset_index(name="Подключения")
-st.subheader("📈 Подключения по дням")
-fig = px.line(visits, x="Дата", y="Подключения", markers=True)
-st.plotly_chart(fig, use_container_width=True)
+if search_text:
+    filtered = filtered[
+        filtered["Пользователь"].str.contains(search_text, case=False, na=False) |
+        filtered["IP"].str.contains(search_text, na=False)
+    ]
 
-# 🗓️ Календарь активности
-st.subheader("🗓️ Календарная плотность активности")
-calendar_df = visits.copy()
-calendar_df["День"] = pd.to_datetime(calendar_df["Дата"]).dt.day
-calendar_df["Месяц"] = pd.to_datetime(calendar_df["Дата"]).dt.month
-fig2 = px.density_heatmap(
-    calendar_df,
-    x="День",
-    y="Месяц",
-    z="Подключения",
-    histfunc="sum",
-    text_auto=True,
-    title="Плотность подключений по календарю"
-)
-st.plotly_chart(fig2, use_container_width=True)
+# Меню выбора страницы
+page = st.sidebar.radio("Раздел", [
+    "📈 По дням",
+    "🗓️ Календарь активности",
+    "⏰ Активность по часам",
+    "🏆 ТОП-10 пользователей",
+    "👥 Уникальные пользователи по дням",
+    "🚨 Подозрительная активность",
+    "📆 По дням недели"
+])
+
+# Разделы дашборда
+if page == "📈 По дням":
+    st.subheader("📈 Подключения по дням")
+    visits = filtered.groupby(filtered["Дата"].dt.date).size().reset_index(name="Подключения")
+    fig = px.line(visits, x="Дата", y="Подключения", markers=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+elif page == "🗓️ Календарь активности":
+    st.subheader("🗓️ Календарная плотность активности")
+    visits = filtered.groupby(filtered["Дата"].dt.date).size().reset_index(name="Подключения")
+    visits["День"] = pd.to_datetime(visits["Дата"]).dt.day
+    visits["Месяц"] = pd.to_datetime(visits["Дата"]).dt.month
+    fig = px.density_heatmap(
+        visits,
+        x="День",
+        y="Месяц",
+        z="Подключения",
+        histfunc="sum",
+        text_auto=True,
+        title="Плотность подключений по календарю"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+elif page == "⏰ Активность по часам":
+    st.subheader("⏰ Активность по часам")
+    filtered["Час"] = filtered["Дата"].dt.hour
+    hourly = filtered.groupby("Час").size().reset_index(name="Подключения")
+    fig = px.bar(hourly, x="Час", y="Подключения", title="Подключения по времени суток")
+    st.plotly_chart(fig, use_container_width=True)
+
+elif page == "🏆 ТОП-10 пользователей":
+    st.subheader("🏆 Топ-10 самых активных пользователей")
+    top_users = filtered["Пользователь"].value_counts().head(10).reset_index()
+    top_users.columns = ["Пользователь", "Подключения"]
+    fig = px.bar(top_users, x="Пользователь", y="Подключения")
+    st.plotly_chart(fig, use_container_width=True)
+
+elif page == "👥 Уникальные пользователи по дням":
+    st.subheader("👥 Количество уникальных пользователей в день")
+    unique_users = filtered.groupby(filtered["Дата"].dt.date)["Пользователь"].nunique().reset_index()
+    unique_users.columns = ["Дата", "Уникальные пользователи"]
+    fig = px.line(unique_users, x="Дата", y="Уникальные пользователи")
+    st.plotly_chart(fig, use_container_width=True)
+
+elif page == "🚨 Подозрительная активность":
+    st.subheader("🚨 Подозрительная активность (более 20 логинов с одного IP в день)")
+    suspicious = filtered.groupby([filtered["Дата"].dt.date, "IP"]).size().reset_index(name="Попыток")
+    suspicious = suspicious[suspicious["Попыток"] > 20]
+    st.dataframe(suspicious)
+
+elif page == "📆 По дням недели":
+    st.subheader("📆 Активность по дням недели")
+    filtered["День недели"] = filtered["Дата"].dt.day_name()
+    weekday_counts = filtered["День недели"].value_counts().reindex([
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+    ])
+    st.bar_chart(weekday_counts)

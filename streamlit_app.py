@@ -1,24 +1,37 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import re
 
 st.set_page_config(page_title="User Dashboard", layout="wide")
-st.title("📊 Дашборд посещений пользователей")
+st.title("📊 Дашборд логинов пользователей")
 
-# Загружаем Excel из папки
-file_path = "data/user_connections.xlsx"
-
+# Чтение логов из файла
+log_path = "data/user_connections.xlsx"
 try:
-    df = pd.read_excel(file_path)
+    raw_df = pd.read_excel(log_path, header=None)
 except Exception as e:
-    st.error(f"Не удалось загрузить файл: {e}")
+    st.error(f"Ошибка чтения файла: {e}")
     st.stop()
 
-# Обработка даты
-if 'Дата' in df.columns:
-    df['Дата'] = pd.to_datetime(df['Дата'])
-else:
-    st.error("Не найдена колонка с датой")
+# Обработка каждой строки
+logs = []
+for row in raw_df[0]:
+    match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}),\d+\s+Login\s+successful\s+for\s+(\S+)\s+from\s+(\d+\.\d+\.\d+\.\d+)", str(row))
+    if match:
+        date_str, time_str, user, ip = match.groups()
+        logs.append({
+            "Дата": pd.to_datetime(f"{date_str} {time_str}"),
+            "Пользователь": user,
+            "IP": ip
+        })
+
+# Превращаем в DataFrame
+df = pd.DataFrame(logs)
+
+# Проверка
+if df.empty:
+    st.warning("Не удалось распарсить данные. Убедитесь, что файл в правильном формате.")
     st.stop()
 
 # Фильтры

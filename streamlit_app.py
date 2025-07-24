@@ -27,4 +27,45 @@ df["Дата"] = pd.to_datetime(df["Дата"].astype(str) + " " + df["Врем�
 df.rename(columns={"Айпи": "IP"}, inplace=True)
 
 # Фильтры
-use
+users = df["Пользователь"].unique()
+ips = df["IP"].unique()
+
+col1, col2 = st.columns(2)
+with col1:
+    selected_users = st.multiselect("Пользователь", users, default=list(users))
+with col2:
+    selected_ips = st.multiselect("IP-адрес", ips, default=list(ips))
+
+date_min = df["Дата"].min().date()
+date_max = df["Дата"].max().date()
+date_range = st.date_input("Выберите диапазон дат", [date_min, date_max])
+
+# Фильтрация
+filtered = df[
+    (df["Дата"].dt.date >= date_range[0]) &
+    (df["Дата"].dt.date <= date_range[1]) &
+    (df["Пользователь"].isin(selected_users)) &
+    (df["IP"].isin(selected_ips))
+]
+
+# 📈 График подключений по дням
+visits = filtered.groupby(filtered["Дата"].dt.date).size().reset_index(name="Подключения")
+st.subheader("📈 Подключения по дням")
+fig = px.line(visits, x="Дата", y="Подключения", markers=True)
+st.plotly_chart(fig, use_container_width=True)
+
+# 🗓️ Календарь активности
+st.subheader("🗓️ Календарная плотность активности")
+calendar_df = visits.copy()
+calendar_df["День"] = pd.to_datetime(calendar_df["Дата"]).dt.day
+calendar_df["Месяц"] = pd.to_datetime(calendar_df["Дата"]).dt.month
+fig2 = px.density_heatmap(
+    calendar_df,
+    x="День",
+    y="Месяц",
+    z="Подключения",
+    histfunc="sum",
+    text_auto=True,
+    title="Плотность подключений по календарю"
+)
+st.plotly_chart(fig2, use_container_width=True)
